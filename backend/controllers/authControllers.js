@@ -20,48 +20,71 @@ exports.register = async (req, res) => {
   try {
     const { name, email, password } = req.body;
 
-    // check if user exists
-    const userExists = await User.findOne({ email });
-    if (userExists) {
-      return res.status(400).json({ message: "User already exists" });
+    // ✅ Validation
+    if (!name || !email || !password) {
+      return res.status(400).json({
+        message: "All fields are required"
+      });
     }
 
-    // hash password
+    if (password.length < 6) {
+      return res.status(400).json({
+        message: "Password must be at least 6 characters"
+      });
+    }
+
+    // ✅ Check if user exists
+    const userExists = await User.findOne({ email });
+    if (userExists) {
+      return res.status(400).json({
+        message: "User already exists"
+      });
+    }
+
+    // ✅ Hash password
     const hashedPassword = await bcrypt.hash(password, 10);
 
-    // generate verification token
+    // ✅ Generate verification token
     const token = crypto.randomBytes(32).toString("hex");
 
-    // create user
+    // ✅ Create user
     const user = await User.create({
       name,
       email,
       password: hashedPassword,
       verificationToken: token,
-      verificationTokenExpires: Date.now() + 3600000 // 1 hour
+      verificationTokenExpires: Date.now() + 3600000, // 1 hour
+      isVerified: false
     });
 
-    // verification link
-    const verifyLink = `https://task-manager-app-six-zeta.vercel.app/verify-email?token=${token}`;
+    // ✅ Verification link
+    const verifyLink = `${process.env.CLIENT_URL}/verify-email?token=${token}`;
 
-    // send email
-    await transporter.sendMail({
-      to: email,
-      subject: "Verify Your Email",
-      html: `
-        <h2>Email Verification</h2>
-        <p>Click the link below to verify your account:</p>
-        <a href="${verifyLink}">Verify Email</a>
-      `
-    });
+    // ✅ Send email (safe handling)
+    try {
+      await transporter.sendMail({
+        to: email,
+        subject: "Verify Your Email",
+        html: `
+          <h2>Email Verification</h2>
+          <p>Click the link below to verify your account:</p>
+          <a href="${verifyLink}">Verify Email</a>
+        `
+      });
+    } catch (err) {
+      console.error("❌ Email sending failed:", err.message);
+      // Don't fail registration because of email
+    }
 
-    res.status(201).json({
-      message: "User registered. Please verify your email."
+    return res.status(201).json({
+      message: "User registered successfully. Please verify your email."
     });
 
   } catch (error) {
-    console.error(error);
-    res.status(500).json({ message: error.message });
+    console.error("REGISTER ERROR:", error);
+    return res.status(500).json({
+      message: "Server error during registration"
+    });
   }
 };
 
@@ -70,6 +93,12 @@ exports.register = async (req, res) => {
 exports.verifyEmail = async (req, res) => {
   try {
     const { token } = req.query;
+
+    if (!token) {
+      return res.status(400).json({
+        message: "Token is missing"
+      });
+    }
 
     const user = await User.findOne({
       verificationToken: token,
@@ -82,19 +111,22 @@ exports.verifyEmail = async (req, res) => {
       });
     }
 
-    // mark as verified
+    // ✅ Mark user as verified
     user.isVerified = true;
     user.verificationToken = undefined;
     user.verificationTokenExpires = undefined;
 
     await user.save();
 
-    res.status(200).json({
+    return res.status(200).json({
       message: "Email verified successfully"
     });
 
   } catch (error) {
-    res.status(500).json({ message: error.message });
+    console.error("VERIFY EMAIL ERROR:", error);
+    return res.status(500).json({
+      message: "Server error during email verification"
+    });
   }
 };
 
@@ -104,56 +136,59 @@ exports.login = async (req, res) => {
   try {
     const { email, password } = req.body;
 
-    // check user
-    const user = await User.findOne({ email });
+    // ✅ Validation
+    if (!email || !password) {
+      return res.status(400).json({
+        message: "Email and password are required"
+      });
+    }
 
+    // ✅ Check user
+    const user = await User.findOne({ email });
     if (!user) {
       return res.status(404).json({
         message: "User not found"
       });
     }
-    if (!user.isVerified){
-      returnres.status(403).json({
-        message:"Please verify your email first"
-      });
-    }
 
-    // 🚫 block unverified users
+    // ✅ Block unverified users
     if (!user.isVerified) {
       return res.status(403).json({
         message: "Please verify your email first"
       });
     }
 
-    // compare password
+    // ✅ Compare password
     const isMatch = await bcrypt.compare(password, user.password);
-
     if (!isMatch) {
       return res.status(400).json({
         message: "Invalid credentials"
       });
     }
 
-    // create JWT token
+    // ✅ Create JWT
     const token = jwt.sign(
       { id: user._id },
       process.env.JWT_SECRET,
       { expiresIn: "1d" }
     );
 
-    // set cookie
+    // ✅ Set cookie
     res.cookie("token", token, {
       httpOnly: true,
-      secure: false,
+      secure: process.env.NODE_ENV === "production", // secure in prod
       sameSite: "strict"
     });
 
-    res.status(200).json({
+    return res.status(200).json({
       message: "Login successful",
       token
     });
 
   } catch (error) {
-    res.status(500).json({ message: error.message });
+    console.error("LOGIN ERROR:", error);
+    return res.status(500).json({
+      message: "Server error during login"
+    });
   }
 };
