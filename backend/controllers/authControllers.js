@@ -20,20 +20,14 @@ exports.register = async (req, res) => {
   try {
     const { name, email, password } = req.body;
 
-    // ✅ Validation
+    // validation
     if (!name || !email || !password) {
       return res.status(400).json({
         message: "All fields are required"
       });
     }
 
-    if (password.length < 6) {
-      return res.status(400).json({
-        message: "Password must be at least 6 characters"
-      });
-    }
-
-    // ✅ Check if user exists
+    // check user
     const userExists = await User.findOne({ email });
     if (userExists) {
       return res.status(400).json({
@@ -41,39 +35,41 @@ exports.register = async (req, res) => {
       });
     }
 
-    // ✅ Hash password
+    // hash password
     const hashedPassword = await bcrypt.hash(password, 10);
 
-    // ✅ Generate verification token
+    // token
     const token = crypto.randomBytes(32).toString("hex");
 
-    // ✅ Create user
+    // create user
     const user = await User.create({
       name,
       email,
       password: hashedPassword,
       verificationToken: token,
-      verificationTokenExpires: Date.now() + 3600000, // 1 hour
+      verificationTokenExpires: Date.now() + 3600000,
       isVerified: false
     });
 
-    // ✅ Verification link
     const verifyLink = `${process.env.CLIENT_URL}/verify-email?token=${token}`;
 
-    // ✅ Send email (safe handling)
+    // 🔥 SAFE EMAIL SEND
     try {
       await transporter.sendMail({
         to: email,
         subject: "Verify Your Email",
         html: `
           <h2>Email Verification</h2>
-          <p>Click the link below to verify your account:</p>
+          <p>Click below:</p>
           <a href="${verifyLink}">Verify Email</a>
         `
       });
-    } catch (err) {
-      console.error("❌ Email sending failed:", err.message);
-      // Don't fail registration because of email
+
+      console.log("✅ Email sent successfully");
+
+    } catch (emailError) {
+      console.error("❌ Email failed:", emailError.message);
+      // DO NOT FAIL REGISTRATION
     }
 
     return res.status(201).json({
@@ -83,11 +79,10 @@ exports.register = async (req, res) => {
   } catch (error) {
     console.error("REGISTER ERROR:", error);
     return res.status(500).json({
-      message: "Server error during registration"
+      message: "Server error"
     });
   }
 };
-
 
 // ================== VERIFY EMAIL ==================
 exports.verifyEmail = async (req, res) => {
