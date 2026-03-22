@@ -7,16 +7,12 @@ const nodemailer = require("nodemailer");
 
 // ================== EMAIL TRANSPORTER ==================
 const transporter = nodemailer.createTransport({
-  host: "smtp.gmail.com",
-  port: 587,           // ✅ use 587 (NOT 465)
-  secure: false,       // ✅ MUST be false for 587
+  host: process.env.SMTP_HOST,
+  port: process.env.SMTP_PORT,
   auth: {
-    user: process.env.EMAIL,
-    pass: process.env.EMAIL_PASS,
+    user: process.env.SMTP_USER,
+    pass: process.env.SMTP_PASS,
   },
-  tls: {
-    family: 4          // 🔥 forces IPv4 (fixes your Render issue)
-  }
 });
 // ================== REGISTER ==================
 exports.register = async (req, res) => {
