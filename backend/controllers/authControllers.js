@@ -2,31 +2,31 @@ const User = require("../models/user");
 const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
 const crypto = require("crypto");
-const nodemailer = require("nodemailer");
+const { Resend } = require("resend");
+
+// ================== RESEND SETUP ==================
+const resend = new Resend(process.env.RESEND_API_KEY);
 
 
-// ================== EMAIL TRANSPORTER ==================
-const transporter = nodemailer.createTransport({
-  host: process.env.SMTP_HOST,
-  port: process.env.SMTP_PORT,
-  auth: {
-    user: process.env.SMTP_USER,
-    pass: process.env.SMTP_PASS,
-  },
-});
 // ================== REGISTER ==================
 exports.register = async (req, res) => {
   try {
     const { name, email, password } = req.body;
 
-    // validation
+    // ✅ Validation
     if (!name || !email || !password) {
       return res.status(400).json({
         message: "All fields are required"
       });
     }
 
-    // check user
+    if (password.length < 6) {
+      return res.status(400).json({
+        message: "Password must be at least 6 characters"
+      });
+    }
+
+    // ✅ Check if user exists
     const userExists = await User.findOne({ email });
     if (userExists) {
       return res.status(400).json({
@@ -34,41 +34,43 @@ exports.register = async (req, res) => {
       });
     }
 
-    // hash password
-    const hashedPassword = await bcrypt.hash(password, 10);
+    // ✅ Hash password (trim for safety)
+    const hashedPassword = await bcrypt.hash(password.trim(), 10);
 
-    // token
+    // ✅ Generate token
     const token = crypto.randomBytes(32).toString("hex");
 
-    // create user
+    // ✅ Create user
     const user = await User.create({
       name,
       email,
       password: hashedPassword,
       verificationToken: token,
-      verificationTokenExpires: Date.now() + 3600000,
+      verificationTokenExpires: Date.now() + 3600000, // 1 hour
       isVerified: false
     });
 
+    // ✅ Verification link
     const verifyLink = `${process.env.CLIENT_URL}/verify-email?token=${token}`;
 
-    // 🔥 SAFE EMAIL SEND
+    // ✅ Send email via Resend
     try {
-      await transporter.sendMail({
+      await resend.emails.send({
+        from: "onboarding@resend.dev",
         to: email,
         subject: "Verify Your Email",
         html: `
           <h2>Email Verification</h2>
-          <p>Click below:</p>
+          <p>Click the link below to verify your account:</p>
           <a href="${verifyLink}">Verify Email</a>
         `
       });
 
-      console.log("✅ Email sent successfully");
+      console.log("✅ Email sent via Resend");
 
     } catch (emailError) {
       console.error("❌ Email failed:", emailError.message);
-      // DO NOT FAIL REGISTRATION
+      // Do NOT break registration
     }
 
     return res.status(201).json({
@@ -82,6 +84,7 @@ exports.register = async (req, res) => {
     });
   }
 };
+
 
 // ================== VERIFY EMAIL ==================
 exports.verifyEmail = async (req, res) => {
@@ -105,7 +108,7 @@ exports.verifyEmail = async (req, res) => {
       });
     }
 
-    // ✅ Mark user as verified
+    // ✅ Mark verified
     user.isVerified = true;
     user.verificationToken = undefined;
     user.verificationTokenExpires = undefined;
@@ -117,9 +120,9 @@ exports.verifyEmail = async (req, res) => {
     });
 
   } catch (error) {
-    console.error("VERIFY EMAIL ERROR:", error);
+    console.error("VERIFY ERROR:", error);
     return res.status(500).json({
-      message: "Server error during email verification"
+      message: "Server error during verification"
     });
   }
 };
@@ -137,7 +140,7 @@ exports.login = async (req, res) => {
       });
     }
 
-    // ✅ Check user
+    // ✅ Find user
     const user = await User.findOne({ email });
     if (!user) {
       return res.status(404).json({
@@ -145,32 +148,32 @@ exports.login = async (req, res) => {
       });
     }
 
-    // ✅ Block unverified users
+    // 🚫 Block unverified users
     if (!user.isVerified) {
       return res.status(403).json({
         message: "Please verify your email first"
       });
     }
 
-    // ✅ Compare password
-    const isMatch = await bcrypt.compare(password, user.password);
+    // ✅ Compare password (trim for safety)
+    const isMatch = await bcrypt.compare(password.trim(), user.password);
     if (!isMatch) {
       return res.status(400).json({
         message: "Invalid credentials"
       });
     }
 
-    // ✅ Create JWT
+    // ✅ Generate JWT
     const token = jwt.sign(
       { id: user._id },
       process.env.JWT_SECRET,
       { expiresIn: "1d" }
     );
 
-    // ✅ Set cookie
+    // ✅ Cookie
     res.cookie("token", token, {
       httpOnly: true,
-      secure: process.env.NODE_ENV === "production", // secure in prod
+      secure: process.env.NODE_ENV === "production",
       sameSite: "strict"
     });
 
