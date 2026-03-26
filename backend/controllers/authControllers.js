@@ -56,15 +56,16 @@ exports.register = async (req, res) => {
     // ✅ Send email via Resend
     try {
       await resend.emails.send({
-        from: "onboarding@resend.dev",
+        from: "Quizzot <noreply@quizzot.com>", // ✅ FIXED
         to: email,
         subject: "Verify Your Email",
         html: `
-          <h2>Email Verification</h2>
-          <p>Click the link below to verify your account:</p>
-          <a href="${verifyLink}">Verify Email</a>
-        `
+    <h2>Email Verification</h2>
+    <p>Click the link below to verify your account:</p>
+    <a href="${verifyLink}">Verify Email</a>
+  `
       });
+
 
       console.log("✅ Email sent via Resend");
 
